@@ -55,13 +55,12 @@ int main(int argc,char *argv[]){
 	}
 	fread(symtab_entries,sh_symtab.sh_entsize,sym_count,prog);
 	bool found_function=false;
+	Elf64_Sym func_symbol;
 	for(int i=0;i<sym_count;i++){
-		if(i==51){
-			printf("hey");
-		}
 		int strtab_index = symtab_entries[i].st_name;
 		char* sym_name = &strtab_dump[strtab_index];
 		if(strcmp(sym_name,func_to_debug)==0){
+			func_symbol=symtab_entries[i];
 			found_function =true;
 			break;
 		}
@@ -69,6 +68,19 @@ int main(int argc,char *argv[]){
 	if(!found_function){
 		printf("PRF:: %s not found!\n", func_to_debug);
 	}
+	//----------------------------PART3------------------------//
+	int bind = ELF64_ST_BIND(func_symbol.st_info);
+	if(bind!=1){
+		//BE SURE ITS CORRECT
+		pritnf("PRF:: %s is not a global symbol! :(\n", func_to_debug);
+	}
+		//----------------------------PART4------------------------//
 
+	bool is_defined= func_symbol.st_shndx;
+	if(!is_defined){
+		
+	}
+
+	//-------------------------------PART6-------------------------//
 
 }

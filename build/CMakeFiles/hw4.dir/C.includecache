@@ -1,0 +1,22 @@
+#IncludeRegexLine: ^[ 	]*[#%][ 	]*(include|import)[ 	]*[<"]([^">]+)([">])
+
+#IncludeRegexScan: ^.*$
+
+#IncludeRegexComplain: ^$
+
+#IncludeRegexTransform: 
+
+/home/student/Desktop/hw4/elf64.h
+stdint.h
+-
+
+/home/student/Desktop/hw4/part1.c
+elf64.h
+/home/student/Desktop/hw4/elf64.h
+stdio.h
+-
+string.h
+-
+stdlib.h
+-
+

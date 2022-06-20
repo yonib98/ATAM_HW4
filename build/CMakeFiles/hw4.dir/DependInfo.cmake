@@ -4,7 +4,7 @@ set(CMAKE_DEPENDS_LANGUAGES
   )
 # The set of files for implicit dependencies of each language:
 set(CMAKE_DEPENDS_CHECK_C
-  "/home/student/Desktop/hw4/part1.c" "/home/student/Desktop/hw4/build/CMakeFiles/hw4.dir/part1.c.o"
+  "/home/student/Desktop/atam_Hw4/ATAM_HW4/part1.c" "/home/student/Desktop/atam_Hw4/ATAM_HW4/build/CMakeFiles/hw4.dir/part1.c.o"
   )
 set(CMAKE_C_COMPILER_ID "GNU")
 

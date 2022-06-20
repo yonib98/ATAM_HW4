@@ -1,7 +1,7 @@
 [
 {
-  "directory": "/home/student/Desktop/hw4/build",
-  "command": "/usr/bin/gcc   -g   -o CMakeFiles/hw4.dir/part1.c.o   -c /home/student/Desktop/hw4/part1.c",
-  "file": "/home/student/Desktop/hw4/part1.c"
+  "directory": "/home/student/Desktop/atam_Hw4/ATAM_HW4/build",
+  "command": "/usr/bin/gcc   -g   -o CMakeFiles/hw4.dir/part1.c.o   -c /home/student/Desktop/atam_Hw4/ATAM_HW4/part1.c",
+  "file": "/home/student/Desktop/atam_Hw4/ATAM_HW4/part1.c"
 }
 ]

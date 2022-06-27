@@ -8,6 +8,12 @@
 #include <sys/ptrace.h>
 #include <unistd.h>
 #include <sys/user.h>
+
+//Declerations
+pid_t run_target(const char *programname,char** child_argv);
+void debug_func(pid_t child_pid, unsigned long func_address, int iterations_counter);
+void run_breakpoint_debugger(pid_t child_pid, unsigned long func_address);
+void run_dynamic_breakpoint(pid_t child_pid, unsigned long plt_address);
 int main(int argc, char *argv[])
 {
 	 char* func_to_debug = argv[1];
@@ -166,7 +172,7 @@ int main(int argc, char *argv[])
 	}
 	else
 	{
-		run_breakpoint_debugger(child, func_address, 0);
+		run_breakpoint_debugger(child, func_address);
 	}
 }
 
@@ -223,7 +229,7 @@ void debug_func(pid_t child_pid, unsigned long func_address, int iterations_coun
 
 		// printing
 		ptrace(PTRACE_GETREGS, child_pid, 0, &regs);
-		printf("PRF:: run #%lld returned with %d\n", iterations_counter, regs.rax);
+		printf("PRF:: run #%d returned with %lld\n", iterations_counter, regs.rax);
 
 		// delete breakpoint: return from function
 		ptrace(PTRACE_POKETEXT, child_pid, (void *)return_address, (void *)return_data);
@@ -279,7 +285,7 @@ void run_dynamic_breakpoint(pid_t child_pid, unsigned long plt_address)
 	wait(&wait_status);
 
 	ptrace(PTRACE_GETREGS, child_pid, 0, &regs);
-	printf("PRF:: run #%lld returned with %d\n", iterations_counter, regs.rax);
+	printf("PRF:: run #%d returned with %lld\n", iterations_counter, regs.rax);
 
 	// delete breakpoint: return from function
 	ptrace(PTRACE_POKETEXT, child_pid, (void *)return_address, (void *)return_data);

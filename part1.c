@@ -1,4 +1,5 @@
-#include "elf64.h"
+
+ #include "elf64.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -8,6 +9,14 @@
 #include <sys/ptrace.h>
 #include <unistd.h>
 #include <sys/user.h>
+
+#define DO_SYS( syscall ) do { \
+/* safely invoke a system call */ \
+ if( (syscall) == -1 ) { \
+perror( #syscall ); \
+exit(1); \
+ }\
+ } while( 0 ) \
 
 //Declerations
 pid_t run_target(const char *programname,char** child_argv);
@@ -105,7 +114,10 @@ int main(int argc, char *argv[])
 		{
 			func_symbol = symtab_entries[i];
 			found_function = true;
-			break;
+			int bind = ELF64_ST_BIND(func_symbol.st_info);
+			if(bind==1){
+				break;
+			}
 		}
 	}
 	if (!found_function)
@@ -204,49 +216,72 @@ void debug_func(pid_t child_pid, unsigned long func_address, int iterations_coun
 	struct user_regs_struct regs;
 	int wait_status;
 	unsigned long func_data = ptrace(PTRACE_PEEKTEXT, child_pid, (void *)func_address, NULL);
+	if((long)func_data==-1){
+		perror("ptrace");
+		exit(1);
+	}
 	unsigned long func_data_trap = (func_data & 0xFFFFFFFFFFFFFF00) | 0xCC;
-	ptrace(PTRACE_POKETEXT, child_pid, (void *)func_address, (void *)func_data_trap);
-	ptrace(PTRACE_CONT, child_pid, NULL, NULL);
+	DO_SYS(ptrace(PTRACE_POKETEXT, child_pid, (void *)func_address, (void *)func_data_trap));
+	DO_SYS(ptrace(PTRACE_CONT, child_pid, NULL, NULL));
 	wait(&wait_status);
 
 	while (!WIFEXITED(wait_status))
 	{
 		// deleting the CC from the beginning of the function
 		iterations_counter++;
-		ptrace(PTRACE_GETREGS, child_pid, 0, &regs);
-		ptrace(PTRACE_POKETEXT, child_pid, (void *)func_address, (void *)func_data);
+		DO_SYS(ptrace(PTRACE_GETREGS, child_pid, 0, &regs));
+		long caller_rsp = regs.rsp+0x8;
+		DO_SYS(ptrace(PTRACE_POKETEXT, child_pid, (void *)func_address, (void *)func_data));
 		regs.rip -= 1;
-		ptrace(PTRACE_SETREGS, child_pid, 0, &regs);
+		DO_SYS(ptrace(PTRACE_SETREGS, child_pid, 0, &regs));
 
 		// breakpoint after returning from function
 		long top_of_stack = regs.rsp;
 		unsigned long return_address = ptrace(PTRACE_PEEKTEXT, child_pid, (void *)top_of_stack, NULL);
 		long return_data = ptrace(PTRACE_PEEKTEXT, child_pid, (void *)return_address, NULL);
 		long return_data_trap = (return_data & 0xFFFFFFFFFFFFFF00) | 0xCC;
-		ptrace(PTRACE_POKETEXT, child_pid, (void *)return_address, (void *)return_data_trap);
-		ptrace(PTRACE_CONT, child_pid, NULL, NULL);
-		wait(&wait_status);
+		DO_SYS(ptrace(PTRACE_POKETEXT, child_pid, (void *)return_address, (void *)return_data_trap));
+		DO_SYS(ptrace(PTRACE_CONT, child_pid, NULL, NULL));
+		DO_SYS(wait(&wait_status));
+
+		DO_SYS(ptrace(PTRACE_GETREGS, child_pid, 0, &regs));
+		
+		while(caller_rsp!=regs.rsp){
+				// delete breakpoint: return from function
+			DO_SYS(ptrace(PTRACE_POKETEXT, child_pid, (void *)return_address, (void *)return_data));
+			regs.rip -= 1;
+			DO_SYS(ptrace(PTRACE_SETREGS, child_pid, 0, &regs));
+
+			DO_SYS(ptrace(PTRACE_SINGLESTEP, child_pid, NULL, NULL));
+			DO_SYS(wait(&wait_status));
+
+			DO_SYS(ptrace(PTRACE_POKETEXT, child_pid, (void *)return_address, (void *)return_data_trap));
+			DO_SYS(ptrace(PTRACE_CONT, child_pid, NULL, NULL));
+			DO_SYS(wait(&wait_status));
+			DO_SYS(ptrace(PTRACE_GETREGS, child_pid, 0, &regs));
+
+		}
 
 		// printing
-		ptrace(PTRACE_GETREGS, child_pid, 0, &regs);
-		printf("PRF:: run #%d returned with %lld\n", iterations_counter, regs.rax);
+		printf("PRF:: run #%d returned with %d\n", iterations_counter,(int)regs.rax);
+
 
 		// delete breakpoint: return from function
-		ptrace(PTRACE_POKETEXT, child_pid, (void *)return_address, (void *)return_data);
+		DO_SYS(ptrace(PTRACE_POKETEXT, child_pid, (void *)return_address, (void *)return_data));
 		regs.rip -= 1;
-		ptrace(PTRACE_SETREGS, child_pid, 0, &regs);
+		DO_SYS(ptrace(PTRACE_SETREGS, child_pid, 0, &regs));
 
 		// restore the breakpoint to the entry of the function.
-		ptrace(PTRACE_POKETEXT, child_pid, (void *)func_address, (void *)func_data_trap);
-		ptrace(PTRACE_CONT, child_pid, NULL, NULL);
-		wait(&wait_status);
+		DO_SYS(ptrace(PTRACE_POKETEXT, child_pid, (void *)func_address, (void *)func_data_trap));
+		DO_SYS(ptrace(PTRACE_CONT, child_pid, NULL, NULL));
+		DO_SYS(wait(&wait_status));
 	}
 }
 
 void run_breakpoint_debugger(pid_t child_pid, unsigned long func_address)
 {
 	int wait_status;
-	wait(&wait_status);
+	DO_SYS(wait(&wait_status));
 	debug_func(child_pid, func_address, 0);
 }
 
@@ -255,43 +290,81 @@ void run_dynamic_breakpoint(pid_t child_pid, unsigned long plt_address)
 	int iterations_counter = 0;
 	int wait_status;
 	struct user_regs_struct regs;
-	wait(&wait_status);
+	DO_SYS(wait(&wait_status));
 	unsigned long func_address = ptrace(PTRACE_PEEKTEXT, child_pid, (void *)plt_address, NULL);
+	if((long)func_address==-1){
+		perror("ptrace");
+		exit(1);
+	}
 	long func_data = ptrace(PTRACE_PEEKTEXT, child_pid, (void *)func_address, NULL);
-
+	if((long)func_data==-1){
+		perror("ptrace");
+		exit(1);
+	}
 	long func_data_trap = (func_data & 0xFFFFFFFFFFFFFF00) | 0xCC;
-	ptrace(PTRACE_POKETEXT, child_pid, (void *)func_address, (void *)func_data_trap);
-	ptrace(PTRACE_CONT, child_pid, NULL, NULL);
-	wait(&wait_status);
+	DO_SYS(ptrace(PTRACE_POKETEXT, child_pid, (void *)func_address, (void *)func_data_trap));
+	DO_SYS(ptrace(PTRACE_CONT, child_pid, NULL, NULL));
+	DO_SYS(wait(&wait_status));
 	if (WIFEXITED(wait_status))
 	{
 		return;
 	}
 	// deleting the CC from the beginning of the function
 	iterations_counter++;
-	ptrace(PTRACE_GETREGS, child_pid, 0, &regs);
-	ptrace(PTRACE_POKETEXT, child_pid, (void *)func_address, (void *)func_data);
+	
+	DO_SYS(ptrace(PTRACE_GETREGS, child_pid, 0, &regs));
+	long caller_rsp = regs.rsp+0x8;
+
+	DO_SYS(ptrace(PTRACE_POKETEXT, child_pid, (void *)func_address, (void *)func_data));
 	regs.rip -= 1;
-	ptrace(PTRACE_SETREGS, child_pid, 0, &regs);
+	DO_SYS(ptrace(PTRACE_SETREGS, child_pid, 0, &regs));
 
 	// breakpoint after returning from function
 	long top_of_stack = regs.rsp;
 	unsigned long return_address = ptrace(PTRACE_PEEKTEXT, child_pid, (void *)top_of_stack, NULL);
+	if((long)return_address==-1){
+		perror("ptrace");
+		exit(1);
+	}
 	long return_data = ptrace(PTRACE_PEEKTEXT, child_pid, (void *)return_address, NULL);
+	if((long)return_data==-1){
+		perror("ptrace");
+		exit(1);
+	}
 	long return_data_trap = (return_data & 0xFFFFFFFFFFFFFF00) | 0xCC;
 
-	ptrace(PTRACE_POKETEXT, child_pid, (void *)return_address, (void *)return_data_trap);
-	ptrace(PTRACE_CONT, child_pid, NULL, NULL);
-	wait(&wait_status);
+	DO_SYS(ptrace(PTRACE_POKETEXT, child_pid, (void *)return_address, (void *)return_data_trap));
+	DO_SYS(ptrace(PTRACE_CONT, child_pid, NULL, NULL));
+	DO_SYS(wait(&wait_status));
+	DO_SYS(ptrace(PTRACE_GETREGS, child_pid, 0, &regs));
 
-	ptrace(PTRACE_GETREGS, child_pid, 0, &regs);
-	printf("PRF:: run #%d returned with %lld\n", iterations_counter, regs.rax);
+
+		while(caller_rsp!=regs.rsp){
+				// delete breakpoint: return from function
+			DO_SYS(ptrace(PTRACE_POKETEXT, child_pid, (void *)return_address, (void *)return_data));
+			regs.rip -= 1;
+			DO_SYS(ptrace(PTRACE_SETREGS, child_pid, 0, &regs));
+
+			DO_SYS(ptrace(PTRACE_SINGLESTEP, child_pid, NULL, NULL));
+			DO_SYS(wait(&wait_status));
+
+			DO_SYS(ptrace(PTRACE_POKETEXT, child_pid, (void *)return_address, (void *)return_data_trap));
+			DO_SYS(ptrace(PTRACE_CONT, child_pid, NULL, NULL));
+			DO_SYS(wait(&wait_status));
+			DO_SYS(ptrace(PTRACE_GETREGS, child_pid, 0, &regs));
+
+		}
+	printf("PRF:: run #%d returned with %d\n", iterations_counter, (int)regs.rax);
 
 	// delete breakpoint: return from function
-	ptrace(PTRACE_POKETEXT, child_pid, (void *)return_address, (void *)return_data);
+	DO_SYS(ptrace(PTRACE_POKETEXT, child_pid, (void *)return_address, (void *)return_data));
 	regs.rip -= 1;
-	ptrace(PTRACE_SETREGS, child_pid, 0, &regs);
+	DO_SYS(ptrace(PTRACE_SETREGS, child_pid, 0, &regs));
 
 	func_address = ptrace(PTRACE_PEEKTEXT, child_pid, (void *)plt_address, NULL);
+	if((long)func_address==-1){
+		perror("ptrace");
+		exit(1);
+	}
 	debug_func(child_pid, func_address, iterations_counter);
 }
